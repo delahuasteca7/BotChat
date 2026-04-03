@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Activar Servidor WhatsApp</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            background-color: #f0f2f5;
+        }
+
+        .container {
+            background-color: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            text-align: center;
+            max-width: 400px;
+            width: 100%;
+        }
+
+        h1 {
+            color: #333;
+            font-size: 24px;
+            margin-bottom: 20px;
+        }
+
+        #qr-container {
+            margin: 20px 0;
+            min-height: 250px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background-color: #f8f9fa;
+            border: 1px dashed #ccc;
+            border-radius: 4px;
+        }
+
+        #status {
+            margin-top: 15px;
+            font-weight: bold;
+            color: #666;
+        }
+
+        .btn {
+            background-color: #25D366;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: background-color 0.3s;
+            margin-top: 15px;
+        }
+
+        .btn:hover {
+            background-color: #128C7E;
+        }
+
+        .btn:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+
+        .btn-danger {
+            background-color: #dc3545;
+        }
+
+        .btn-danger:hover {
+            background-color: #c82333;
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        .img-fluid {
+            max-width: 100%;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>Conectar WhatsApp Web</h1>
+        <p>Haz clic en el botón para iniciar el servidor y generar el código QR.</p>
+        <button id="start-btn" class="btn">Iniciar Servidor</button>
+        <button id="stop-btn" class="btn btn-danger hidden">Detener Servidor</button>
+        <div id="qr-container">
+            <span id="qr-placeholder">El código QR aparecerá aquí</span>
+            <img id="qr-image" class="img-fluid hidden">
+        </div>
+        <div id="status">Estado: Desconectado</div>
+    </div>
+
+    <script>
+        const startBtn = document.getElementById('start-btn');
+        const stopBtn = document.getElementById('stop-btn');
+        const statusDiv = document.getElementById('status');
+        const qrImage = document.getElementById('qr-image');
+        const qrPlaceholder = document.getElementById('qr-placeholder');
+        let pollInterval;
+
+        startBtn.addEventListener('click', async () => {
+            startBtn.disabled = true;
+            statusDiv.textContent = 'Estado: Iniciando servidor...';
+            qrPlaceholder.textContent = 'Generando QR...';
+            qrImage.style.display = 'none';
+
+            try {
+                const response = await fetch('/api/start-whatsapp', { method: 'POST' });
+                if (response.ok) {
+                    statusDiv.textContent = 'Estado: Esperando QR...';
+                    pollStatus();
+                    stopBtn.style.display = 'inline-block';
+                } else {
+                    statusDiv.textContent = 'Estado: Error al iniciar';
+                    startBtn.disabled = false;
+                }
+            } catch (error) {
+                statusDiv.textContent = 'Estado: Error de conexión';
+                startBtn.disabled = false;
+            }
+        });
+
+        stopBtn.addEventListener('click', async () => {
+            stopBtn.disabled = true;
+            try {
+                const response = await fetch('/api/stop-whatsapp', { method: 'POST' });
+                if (response.ok) {
+                    statusDiv.textContent = 'Estado: Servidor detenido';
+                    statusDiv.style.color = '#666';
+                    startBtn.style.display = 'inline-block';
+                    startBtn.disabled = false;
+                    stopBtn.style.display = 'none';
+                    stopBtn.disabled = false;
+                    qrPlaceholder.style.display = 'block';
+                    qrPlaceholder.textContent = 'El código QR aparecerá aquí';
+                    qrImage.style.display = 'none';
+                    clearInterval(pollInterval);
+                }
+            } catch (error) {
+                console.error('Error stopping server:', error);
+                stopBtn.disabled = false;
+            }
+        });
+
+        async function pollStatus() {
+            pollInterval = setInterval(async () => {
+                try {
+                    const response = await fetch('/api/whatsapp-status');
+                    const data = await response.json();
+
+                    if (data.status === 'qr_ready' && data.qrCode) {
+                        qrPlaceholder.style.display = 'none';
+                        qrImage.src = data.qrCode;
+                        qrImage.style.display = 'block';
+                        statusDiv.textContent = 'Estado: Escanea el QR';
+                        stopBtn.style.display = 'inline-block';
+                    } else if (data.status === 'connected') {
+                        clearInterval(pollInterval);
+                        qrPlaceholder.style.display = 'block';
+                        qrPlaceholder.textContent = '¡WhatsApp Conectado!';
+                        qrImage.style.display = 'none';
+                        statusDiv.textContent = 'Estado: Conectado y listo';
+                        statusDiv.style.color = '#25D366';
+                        startBtn.style.display = 'none';
+                        stopBtn.style.display = 'inline-block';
+                    } else if (data.status === 'disconnected') {
+                        clearInterval(pollInterval);
+                        statusDiv.textContent = 'Estado: Desconectado';
+                        statusDiv.style.color = '#666';
+                        startBtn.style.display = 'inline-block';
+                        startBtn.disabled = false;
+                        stopBtn.style.display = 'none';
+                        qrPlaceholder.style.display = 'block';
+                        qrPlaceholder.textContent = 'El código QR aparecerá aquí';
+                        qrImage.style.display = 'none';
+                    }
+                } catch (error) {
+                    console.error('Error polling status:', error);
+                }
+            }, 3000); // Check every 3 seconds
+        }
+
+    </script>
+</body>
+
+</html>
